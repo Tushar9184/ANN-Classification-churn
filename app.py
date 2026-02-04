@@ -1,17 +1,40 @@
+import os
 import streamlit as st
 import pandas as pd
 import numpy as np
 import pickle
+
+# Silence TensorFlow warnings
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+
 from tensorflow.keras.models import load_model
 
-
+# =======================
+# Page Config
+# =======================
 st.set_page_config(
     page_title="Customer Churn Predictor",
     page_icon="🔥",
     layout="centered"
 )
 
+# =======================
+# Check Required Files
+# =======================
+REQUIRED_FILES = [
+    "churn_model.h5",
+    "scaler.pkl",
+    "label_encoder.pkl"
+]
 
+missing_files = [f for f in REQUIRED_FILES if f not in os.listdir()]
+if missing_files:
+    st.error(f"❌ Missing required files: {missing_files}")
+    st.stop()
+
+# =======================
+# Custom CSS
+# =======================
 st.markdown("""
 <style>
 body {
@@ -49,21 +72,30 @@ h1, h2, h3 {
 </style>
 """, unsafe_allow_html=True)
 
+# =======================
+# Load Model & Artifacts (CACHED)
+# =======================
+@st.cache_resource
+def load_artifacts():
+    model = load_model("churn_model.h5")
+    with open("scaler.pkl", "rb") as f:
+        scaler = pickle.load(f)
+    with open("label_encoder.pkl", "rb") as f:
+        label_encoder = pickle.load(f)
+    return model, scaler, label_encoder
 
-model = load_model("churn_model.h5")
+model, scaler, label_encoder = load_artifacts()
 
-with open("scaler.pkl", "rb") as f:
-    scaler = pickle.load(f)
-
-with open("label_encoder.pkl", "rb") as f:
-    label_encoder = pickle.load(f)   
-
-
+# =======================
+# Header
+# =======================
 st.markdown("<h1>🔥 Customer Churn Prediction</h1>", unsafe_allow_html=True)
 st.markdown("<h3>AI-powered banking insights</h3>", unsafe_allow_html=True)
 st.markdown("---")
 
-
+# =======================
+# Input Section
+# =======================
 credit_score = st.slider("Credit Score", 300, 900, 600)
 age = st.slider("Age", 18, 100, 40)
 tenure = st.slider("Tenure (years)", 0, 10, 3)
@@ -75,49 +107,60 @@ salary = st.number_input("Estimated Salary", 0.0, 200000.0, 50000.0)
 gender = st.selectbox("Gender", ["Female", "Male"])
 geography = st.selectbox("Geography", ["France", "Germany", "Spain"])
 
+# =======================
+# Prediction
+# =======================
 if st.button("🚀 Predict Churn"):
 
-    
+    # Binary mapping
     has_card = 1 if has_card == "Yes" else 0
     is_active = 1 if is_active == "Yes" else 0
 
-    
+    # Gender encoding (NO refit)
+    if gender not in label_encoder.classes_:
+        st.error("Invalid gender value")
+        st.stop()
     gender_encoded = label_encoder.transform([gender])[0]
 
-    
+    # Geography one-hot (ALL columns)
     geo_france = 1 if geography == "France" else 0
     geo_germany = 1 if geography == "Germany" else 0
     geo_spain = 1 if geography == "Spain" else 0
 
-    
+    # Build input DataFrame (training schema)
     input_df = pd.DataFrame([{
-    "CreditScore": credit_score,
-    "Geography_France": geo_france,
-    "Geography_Germany": geo_germany,
-    "Geography_Spain": geo_spain,
-    "Gender": gender_encoded,
-    "Age": age,
-    "Tenure": tenure,
-    "Balance": balance,
-    "NumOfProducts": num_products,
-    "HasCrCard": has_card,
-    "IsActiveMember": is_active,
-    "EstimatedSalary": salary
+        "CreditScore": credit_score,
+        "Geography_France": geo_france,
+        "Geography_Germany": geo_germany,
+        "Geography_Spain": geo_spain,
+        "Gender": gender_encoded,
+        "Age": age,
+        "Tenure": tenure,
+        "Balance": balance,
+        "NumOfProducts": num_products,
+        "HasCrCard": has_card,
+        "IsActiveMember": is_active,
+        "EstimatedSalary": salary
     }])
 
+    # Enforce exact feature order from scaler
     input_df = input_df[scaler.feature_names_in_]
+
+    # Scale
     input_scaled = scaler.transform(input_df)
 
-    
-    churn_prob = model.predict(input_scaled)[0][0]
+    # Predict
+    churn_prob = float(model.predict(input_scaled)[0][0])
     stay_prob = 1 - churn_prob
 
-    
+    # =======================
+    # Output
+    # =======================
     if churn_prob > 0.5:
         st.markdown(
             f"""
             <div class='result-box danger'>
-             <b>High Churn Risk</b><br>
+            ⚠️ <b>High Churn Risk</b><br>
             Churn Probability: {churn_prob:.2%}
             </div>
             """,
@@ -127,7 +170,7 @@ if st.button("🚀 Predict Churn"):
         st.markdown(
             f"""
             <div class='result-box success'>
-             <b>Customer Likely to Stay</b><br>
+            ✅ <b>Customer Likely to Stay</b><br>
             Stay Probability: {stay_prob:.2%}
             </div>
             """,
