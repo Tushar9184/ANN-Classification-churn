@@ -1,10 +1,6 @@
-tensorflow
+streamlit>=1.25
 numpy
 pandas
 scikit-learn
-matplotlib
-seaborn
-jupyterlab
-requests
-streamlit
-tensorboard
+tensorflow==2.13.0
+protobuf<4
